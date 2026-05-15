@@ -1,33 +1,47 @@
 # Claude Code → Hardware Buddy bridge
 
 Drives a `Claude-*` BLE device from Claude Code CLI directly, without the
-Claude desktop app. Mirrors Claude Code's own permission flow: when the
-CLI fires a `Notification` (i.e. it needs your attention — typically a
-permission prompt for something on your `permissions.ask` list), the
-device buzzes and shows the message. Other events drive the device's
-status display: idle / busy / token counter / celebrate animations.
-
-This bridge is **mirror-only**. It does not intercept or override
-permission decisions — Claude Code's `permissions` config (allow / ask /
-deny) remains the single source of truth. You don't need a separate
-buddy policy.
+Claude desktop app. Supports **device-side permission decisions**: when
+Claude Code needs approval for a tool use, the device shows a full-screen
+approval UI with tool name, summary, and command details. You approve or
+deny from the physical buttons — no need to switch back to the terminal.
 
 ## Architecture
 
 ```
 Claude Code (terminal) ─▶ hook.py ─▶ Unix socket ─▶ daemon.py ─▶ BLE ─▶ M5StickC
+                                                        ◀── button press ──┘
 ```
 
-- **`daemon.py`** is a long-running process. Maintains the BLE connection,
-  accumulates session state, pushes snapshots to the device.
-- **`hook.py`** is a short-lived script. Claude Code spawns one per hook
-  event; it forwards a fire-and-forget message to the daemon over
-  `/tmp/claude-buddy.sock`. No PreToolUse interception, no decision
-  round-trip — the hook always exits in a couple of milliseconds.
+- **`daemon.py`** — long-running process. Maintains the BLE connection,
+  accumulates session state, pushes snapshots to the device, relays
+  device button presses back to the hook.
+- **`hook.py`** — short-lived script spawned by Claude Code per hook event.
+  For `PreToolUse`: sends the request to the daemon, blocks until the
+  device responds (approve/deny), then returns the decision to Claude Code.
+  For other events: fire-and-forget status update.
 
-## Setup
+## Features
 
-### 1. Install bleak (in a venv inside this directory)
+- **Full-screen approval UI** — hides the pet, shows tool name (large colored
+  banner), human-readable summary, and full command/code with diff coloring
+- **Tool category colors** — Bash (magenta), Edit/Write (amber), Read/Grep (blue),
+  Plan (teal), others (orange)
+- **Diff highlighting** — removed lines in red, added lines in green
+- **IMU tilt** — pet position responds to device tilt via accelerometer
+- **Auto-allow reads** — Read/Grep/Glob bypass the device for speed
+- **Deny animation** — pet shows dizzy reaction on deny, heart on fast approve
+
+## Quick Start
+
+### 1. Flash the firmware
+
+```bash
+# From the project root
+pio run -t upload
+```
+
+### 2. Install Python dependencies
 
 ```bash
 cd tools/claude_code_bridge
@@ -35,30 +49,37 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-The daemon is launched via `run-daemon.sh` which uses this venv's Python.
-The hook script doesn't need bleak — only stdlib — so it'll run with
-whatever Python is on `PATH`.
+### 3. Start the daemon
 
-### 2. Pair the device with macOS (one time)
+```bash
+./run-daemon.sh
+```
 
-The device firmware uses LE Secure Connections bonding, so the first time
-the daemon connects, macOS will pop a dialog asking for the 6-digit
-passkey shown on the M5StickC screen. Enter it. After that, reconnects
-are silent.
+You should see:
+```
+[12:34:01] scanning for Claude-* device...
+[12:34:03] found Claude-A4B7 (...), connecting...
+[12:34:04] connected, mtu=185
+[12:34:04] hook server listening on /tmp/claude-buddy.sock
+```
 
-If the dialog never appears: open **System Settings → Bluetooth**, find
-the `Claude-XXXX` device, click **Connect**, and macOS will prompt for the
-passkey there.
+### 4. Configure Claude Code hooks
 
-### 3. Configure the hook
-
-Edit `~/.claude/settings.json` (or your project's `.claude/settings.json`)
-and merge the following into your `hooks` block. Use absolute paths;
-adjust if you cloned elsewhere:
+Edit `~/.claude/settings.json` (or your project's `.claude/settings.json`).
+Replace `/path/to/` with the actual absolute path where you cloned this repo:
 
 ```json
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [{
+          "type": "command",
+          "command": "/path/to/claude-desktop-buddy/tools/claude_code_bridge/hook.py",
+          "timeout": 180000
+        }]
+      }
+    ],
     "PostToolUse": [
       { "hooks": [{ "type": "command", "command": "/path/to/claude-desktop-buddy/tools/claude_code_bridge/hook.py" }] }
     ],
@@ -78,127 +99,99 @@ adjust if you cloned elsewhere:
 }
 ```
 
-That's it — no `PreToolUse`, no separate policy file.
+**Important:** The `PreToolUse` hook with `timeout: 180000` (3 minutes) is
+what enables device-side approval. Without it, you only get status mirroring.
 
-### 4. (Optional) Tune which tools fire `Notification`
+### 5. (Optional) Auto-generate hook paths
 
-Buddy buzzes whenever Claude Code itself decides to ask you. So tuning
-buddy = tuning Claude Code. In your `~/.claude/settings.json`, under
-`permissions`:
-
-- Things you **never** want buddy to bother you about → put in `allow`
-- Things you **do** want a physical heads-up on → put in `ask`
-- Things you want blocked outright → put in `deny`
-
-Example: with `defaultMode: "bypassPermissions"`, only the items in
-`ask` produce a Notification, so buddy stays quiet except for the few
-high-stakes operations you flagged. Typical `ask` list:
-
-```json
-{
-  "permissions": {
-    "ask": [
-      "Bash(git push:*)",
-      "Bash(npm publish:*)",
-      "Bash(kubectl apply:*)",
-      "Bash(kubectl delete:*)"
-    ],
-    "defaultMode": "bypassPermissions"
-  }
-}
-```
-
-## Running
-
-### Start the daemon
+Run this from the repo root to print the correct JSON with your actual paths:
 
 ```bash
-cd tools/claude_code_bridge
-./run-daemon.sh
+HOOK="$(pwd)/tools/claude_code_bridge/hook.py"
+echo "Use this path in your settings.json hooks:"
+echo "  $HOOK"
 ```
 
-You should see something like:
+## Permission Flow
 
 ```
-[12:34:01] scanning for Claude-* device...
-[12:34:03] found Claude-A4B7 (...), connecting...
-[12:34:04] connected, mtu=185
-[12:34:04] hook server listening on /tmp/claude-buddy.sock
+┌─────────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+│ Claude Code │────▶│ hook.py  │────▶│ daemon   │────▶│  Device  │
+│  PreToolUse │     │ (blocks) │     │          │     │          │
+└─────────────┘     └──────────┘     └──────────┘     └──────────┘
+                         ▲                                   │
+                         │         ┌──────────┐              │
+                         └─────────│  daemon  │◀─────────────┘
+                      (decision)   │          │    (BtnA=approve
+                                   └──────────┘     BtnB=deny)
 ```
 
-The device will switch from sleep to idle.
+- **Read / Grep / Glob** → auto-allowed in hook.py, never hits the device
+- **Bash / Edit / Write / others** → shown on device, waits for button press
+- **Timeout (120s)** → abstains, falls back to CLI terminal prompt
 
-Leave this running in a terminal (or backgrounded with `&`,
-`tmux`, `screen`, etc). When you're done with the device,
-Ctrl+C the daemon — the device will fall back to sleep.
+## Customizing Auto-Allow
 
-### Use Claude Code as normal
+Edit `hook.py` line 79 to change which tools bypass the device:
 
-In another terminal:
-
-```bash
-claude
+```python
+if tool in ("Read", "Grep", "Glob"):
 ```
 
-Now ask it to do something on your `permissions.ask` list, e.g.
-*"git push this branch"*. The device should:
+Add or remove tool names as needed. For example, to also auto-allow
+`WebSearch`:
 
-1. Briefly show the notification message in its status line.
-2. Trigger its "completed" animation (buzz / celebrate).
+```python
+if tool in ("Read", "Grep", "Glob", "WebSearch"):
+```
 
-Approve or deny in the terminal as usual. The buddy is a heads-up only,
-not a remote control.
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLAUDE_BUDDY_SOCK` | `/tmp/claude-buddy.sock` | Unix socket path for hook↔daemon communication |
 
 ## Troubleshooting
 
 ### Device not found during scan
 
-- Make sure you've recently woken it (any button press) — the M5StickC's
-  BLE radio sleeps with the device.
-- Check `Settings → Bluetooth → ON` on the stick.
-- If you previously paired it with the Claude desktop app and want to
-  re-pair: long-hold A → settings → reset → factory reset.
+- Wake the device (any button press) — BLE radio sleeps with the screen
+- Check Settings → Bluetooth → ON on the device
+- If previously paired with Claude desktop app: long-hold A → settings →
+  reset → factory reset
 
 ### "daemon unreachable" in hook stderr
 
-- Daemon isn't running, or socket path mismatch. Confirm `/tmp/claude-buddy.sock`
-  exists when the daemon is up.
-- Set `CLAUDE_BUDDY_SOCK=/your/path` in both daemon and hook env if you've
-  customized.
+- Daemon isn't running, or socket path mismatch
+- Confirm `/tmp/claude-buddy.sock` exists when daemon is up
+- Set `CLAUDE_BUDDY_SOCK` in both daemon and hook env if customized
 
-### Permission dialog from macOS keeps appearing
+### Approval screen not showing
 
-The first connection after a factory reset on the device will re-prompt.
-After that, macOS stores the bond. If you're hitting it repeatedly,
-something's wrong with the bond — try removing the device from
-**System Settings → Bluetooth** and pairing fresh.
+- Ensure `PreToolUse` hook is configured with `timeout: 180000`
+- Check daemon log — if it says "abstain (no BLE)", the device is disconnected
+- If it says "abstain (busy)", a previous prompt is still pending
 
-### Hooks not firing at all
+### Hook not firing
 
 ```bash
 claude --debug
 ```
 
-This prints hook execution. If the hook script exits with a Python
-traceback, fix and retry. If hooks aren't being invoked at all, check
-your `~/.claude/settings.json` syntax with `python -c 'import json; json.load(open("$HOME/.claude/settings.json"))'`.
+Check for Python tracebacks. Verify settings.json syntax:
+```bash
+python3 -c "import json; json.load(open('$HOME/.claude/settings.json'))"
+```
 
-### Buddy never buzzes even when CLI asks
+### macOS Bluetooth passkey dialog
 
-The bridge only buzzes on the `Notification` event. If `defaultMode` is
-`bypassPermissions` and the tool isn't on your `ask` list, the CLI
-auto-approves silently and never fires `Notification` — buddy will stay
-quiet by design. Move the tool into `permissions.ask` to opt in.
+First connection after factory reset prompts for the 6-digit passkey shown
+on the device screen. After bonding, reconnects are silent. If it keeps
+prompting, remove the device from System Settings → Bluetooth and re-pair.
 
 ## Notes
 
-- The daemon doesn't persist tokens across restarts. The cumulative count
-  resets each time you restart the daemon. The device's NVS-backed
-  `tokens_today` (which drives the celebrate animation) tracks deltas
-  from the bridge, so you'll get celebrations on each 50K chunk regardless
-  of daemon restarts.
-- For multiple Claude Code sessions running concurrently, the device shows
-  aggregate state (total sessions). Per-session detail isn't displayed.
-- Older firmware that still tries to send `{"cmd":"permission",...}`
-  responses is fine — the daemon ignores them as stale, since this bridge
-  no longer pushes prompts.
+- The daemon doesn't persist token counts across restarts
+- Multiple concurrent Claude Code sessions show aggregate state on device
+- The device's `once` decision means "allow this one time" — each new tool
+  use requires a fresh approval
