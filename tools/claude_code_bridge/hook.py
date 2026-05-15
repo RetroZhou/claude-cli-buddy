@@ -92,26 +92,26 @@ def main() -> None:
             command = tool_input.get("command", "")
             if tool == "Bash" and command:
                 summary = "Run shell command"
-                hint = command[:196]
+                hint = command[:416]
             elif tool == "Edit" and file_path:
                 summary = f"Edit {file_path}"[:56]
                 old = tool_input.get("old_string", "")
                 new = tool_input.get("new_string", "")
-                hint = f"-{old[:90]}\n+{new[:90]}" if old else new[:196]
+                hint = f"-{old[:200]}\n+{new[:200]}" if old else new[:416]
             elif tool == "Write" and file_path:
                 summary = f"Write {file_path}"[:56]
-                hint = tool_input.get("content", "")[:196]
+                hint = tool_input.get("content", "")[:416]
             elif tool == "Read" and file_path:
                 summary = f"Read {file_path}"[:56]
             elif file_path:
                 summary = f"{tool} {file_path}"[:56]
                 hint = str(tool_input.get("command",
-                           tool_input.get("content", "")))[:196]
+                           tool_input.get("content", "")))[:416]
             elif command:
                 summary = f"{tool}: {command[:40]}"[:56]
-                hint = command[:196]
+                hint = command[:416]
             else:
-                hint = str(next(iter(tool_input.values()), ""))[:196]
+                hint = str(next(iter(tool_input.values()), ""))[:416]
 
         resp = request_response({
             "event": "PreToolUse",

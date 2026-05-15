@@ -19,7 +19,7 @@ struct TamaState {
   char     promptId[40];     // pending permission request ID; empty = no prompt
   char     promptTool[20];
   char     promptSummary[60]; // human-readable summary (e.g. "Edit src/main.cpp")
-  char     promptHint[200];   // raw CLI code / command details (full content)
+  char     promptHint[420];   // raw CLI code / command details (fills full screen)
 };
 
 // ---------------------------------------------------------------------------
