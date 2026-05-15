@@ -744,147 +744,133 @@ static uint8_t wrapInto(const char* in, char out[][24], uint8_t maxRows, uint8_t
 static void drawApprovalFullscreen() {
   const Palette& p = characterPalette();
   // Canvas already cleared by base-layer skip when inPrompt is true
-  int y = 4;
+  int y = 2;
 
-  // Header: "APPROVE?" with timer — always HOT (orange-red) for urgency
-  spr.setTextSize(2);
-  uint32_t waited = (millis() - promptArrivedMs) / 1000;
-  spr.setTextColor(HOT, p.bg);
-  spr.setCursor(4, y);
-  spr.print("APPROVE?");
-  spr.setTextSize(1);
-  spr.setTextColor(waited >= 10 ? HOT : p.textDim, p.bg);
-  spr.setCursor(W - 30, y + 4);
-  spr.printf("%lus", (unsigned long)waited);
-  y += 22;
-
-  // Separator
-  spr.drawFastHLine(0, y, W, p.textDim);
-  y += 6;
-
-  // Summary — human-readable description of what's being requested
-  // Color-code background by tool category — brighter for better visibility
-  const uint16_t TOOL_BG_READ  = 0x0018;  // dark blue — read/search ops
-  const uint16_t TOOL_BG_WRITE = 0x6300;  // dark amber — write/edit ops
-  const uint16_t TOOL_BG_EXEC  = 0x600C;  // dark magenta — shell execution
-  const uint16_t TOOL_BG_PLAN  = 0x3018;  // dark teal — planning/thinking
-  const uint16_t TOOL_BG_OTHER = 0x4200;  // dark orange — other tools
+  // Header: tool name in large ASCII-style text with colored background
+  // Color-code background by tool category
+  const uint16_t TOOL_BG_READ  = 0x0018;
+  const uint16_t TOOL_BG_WRITE = 0x6300;
+  const uint16_t TOOL_BG_EXEC  = 0x600C;
+  const uint16_t TOOL_BG_PLAN  = 0x3018;
+  const uint16_t TOOL_BG_OTHER = 0x4200;
 
   uint16_t toolBg = p.bg;
   uint16_t toolFg = p.text;
   const char* t = tama.promptTool;
   if (strcmp(t, "Read") == 0 || strcmp(t, "Grep") == 0 || strcmp(t, "Glob") == 0) {
-    toolBg = TOOL_BG_READ; toolFg = 0x7DFF;  // bright blue text
+    toolBg = TOOL_BG_READ; toolFg = 0x7DFF;
   } else if (strcmp(t, "Edit") == 0 || strcmp(t, "Write") == 0) {
-    toolBg = TOOL_BG_WRITE; toolFg = 0xFFE0; // bright yellow text
+    toolBg = TOOL_BG_WRITE; toolFg = 0xFFE0;
   } else if (strcmp(t, "Bash") == 0) {
-    toolBg = TOOL_BG_EXEC; toolFg = 0xFDFF;  // bright pink text
+    toolBg = TOOL_BG_EXEC; toolFg = 0xFDFF;
   } else if (strcmp(t, "Plan") == 0 || strcmp(t, "Task") == 0) {
-    toolBg = TOOL_BG_PLAN; toolFg = 0x87FF;  // bright cyan text
+    toolBg = TOOL_BG_PLAN; toolFg = 0x87FF;
   } else {
-    // All other tools — orange accent
-    toolBg = TOOL_BG_OTHER; toolFg = 0xFFE0;  // bright yellow text
+    toolBg = TOOL_BG_OTHER; toolFg = 0xFFE0;
   }
 
-  if (tama.promptSummary[0]) {
-    int slen = strlen(tama.promptSummary);
-    const int CHARS_PER_LINE = 21;
-    int summaryLines = (slen + CHARS_PER_LINE - 1) / CHARS_PER_LINE;
-    if (summaryLines > 3) summaryLines = 3;
-    // Draw background block for summary
-    spr.fillRect(0, y, W, summaryLines * 10 + 2, toolBg);
+  // Tool name banner — large text size 3 for short names, size 2 for longer
+  int tLen = strlen(tama.promptTool);
+  int bannerH;
+  if (tLen <= 5) {
+    bannerH = 26;
+    spr.fillRect(0, y, W, bannerH, toolBg);
+    spr.setTextSize(3);
     spr.setTextColor(toolFg, toolBg);
-    spr.setTextSize(1);
-    for (int i = 0; i * CHARS_PER_LINE < slen && i < 3; i++) {
-      spr.setCursor(4, y + 1);
-      int remaining = slen - i * CHARS_PER_LINE;
-      int chars = remaining < CHARS_PER_LINE ? remaining : CHARS_PER_LINE;
-      spr.printf("%.*s", chars, tama.promptSummary + i * CHARS_PER_LINE);
-      y += 10;
-    }
-    y += 2;
+    spr.setCursor(4, y + 2);
+    spr.print(tama.promptTool);
+  } else if (tLen <= 10) {
+    bannerH = 20;
+    spr.fillRect(0, y, W, bannerH, toolBg);
+    spr.setTextSize(2);
+    spr.setTextColor(toolFg, toolBg);
+    spr.setCursor(4, y + 2);
+    spr.print(tama.promptTool);
   } else {
-    // Fallback: show tool name if no summary
-    int tLen = strlen(tama.promptTool);
-    int blockH = (tLen <= 10) ? 20 : 12;
-    spr.fillRect(0, y, W, blockH + 2, toolBg);
+    bannerH = 12;
+    spr.fillRect(0, y, W, bannerH, toolBg);
+    spr.setTextSize(1);
     spr.setTextColor(toolFg, toolBg);
-    if (tLen <= 10) {
-      spr.setTextSize(2);
-      spr.setCursor(4, y + 1);
-      spr.print(tama.promptTool);
-      y += 22;
-    } else {
-      spr.setTextSize(1);
-      spr.setCursor(4, y + 1);
-      spr.print(tama.promptTool);
-      y += 14;
+    spr.setCursor(4, y + 2);
+    spr.print(tama.promptTool);
+  }
+
+  // Timer on the right side of banner
+  spr.setTextSize(1);
+  uint32_t waited = (millis() - promptArrivedMs) / 1000;
+  spr.setTextColor(waited >= 10 ? HOT : p.textDim, toolBg);
+  spr.setCursor(W - 24, y + bannerH - 10);
+  spr.printf("%lus", (unsigned long)waited);
+  y += bannerH + 2;
+
+  // Summary line — what's being done
+  if (tama.promptSummary[0]) {
+    spr.setTextSize(1);
+    spr.setTextColor(p.text, p.bg);
+    int slen = strlen(tama.promptSummary);
+    const int CPL = 22;
+    for (int i = 0; i * CPL < slen && i < 3; i++) {
+      spr.setCursor(4, y);
+      int rem = slen - i * CPL;
+      int chars = rem < CPL ? rem : CPL;
+      spr.printf("%.*s", chars, tama.promptSummary + i * CPL);
+      y += 9;
     }
   }
-  spr.setTextSize(1);
 
   // Separator before code
-  y += 2;
-  spr.drawFastHLine(4, y, W - 8, p.textDim);
-  y += 6;
+  y += 1;
+  spr.drawFastHLine(2, y, W - 4, p.textDim);
+  y += 4;
 
-  // Hint text (raw CLI code) — word-wrapped, with diff coloring
+  // Hint text (full command/code) — word-wrapped, with diff coloring
   int hlen = strlen(tama.promptHint);
-  const int CHARS_PER_LINE_H = 21;
-  int maxLines = (H - 20 - y) / 10;
-  // Split hint into lines by \n or by wrapping
+  const int CPL_H = 22;
+  int maxLines = (H - 16 - y) / 9;
   const char* hptr = tama.promptHint;
   int hrem = hlen;
-  const uint16_t DIFF_RED_BG  = 0x3000;  // dark red background for removed lines
-  const uint16_t DIFF_GREEN_BG = 0x0280; // dark green background for added lines
+  const uint16_t DIFF_RED_BG  = 0x3000;
+  const uint16_t DIFF_GREEN_BG = 0x0280;
   for (int line = 0; line < maxLines && hrem > 0; line++) {
-    // Find next newline or wrap point
     const char* nl = (const char*)memchr(hptr, '\n', hrem);
     int lineLen = nl ? (int)(nl - hptr) : hrem;
-    if (lineLen > CHARS_PER_LINE_H) lineLen = CHARS_PER_LINE_H;
+    if (lineLen > CPL_H) lineLen = CPL_H;
 
-    // Determine line color based on diff prefix
     char firstChar = hptr[0];
     uint16_t bg = p.bg;
     uint16_t fg = p.textDim;
     if (firstChar == '-') {
-      bg = DIFF_RED_BG;
-      fg = HOT;
+      bg = DIFF_RED_BG; fg = HOT;
     } else if (firstChar == '+') {
-      bg = DIFF_GREEN_BG;
-      fg = GREEN;
+      bg = DIFF_GREEN_BG; fg = GREEN;
     }
 
-    // Draw background highlight for diff lines
-    if (bg != p.bg) {
-      spr.fillRect(0, y, W, 10, bg);
-    }
+    if (bg != p.bg) spr.fillRect(0, y, W, 9, bg);
     spr.setTextColor(fg, bg);
-    spr.setCursor(4, y + 1);
+    spr.setCursor(3, y + 1);
     spr.printf("%.*s", lineLen, hptr);
 
-    // Advance past this line
-    if (nl && (int)(nl - hptr) <= CHARS_PER_LINE_H) {
+    if (nl && (int)(nl - hptr) <= CPL_H) {
       hptr = nl + 1;
       hrem -= (lineLen + 1);
     } else {
       hptr += lineLen;
       hrem -= lineLen;
     }
-    y += 10;
+    y += 9;
   }
 
   // Button labels at fixed bottom position
   if (responseSent) {
     spr.setTextColor(p.textDim, p.bg);
-    spr.setCursor(4, H - 14);
+    spr.setCursor(4, H - 12);
     spr.print("sent...");
   } else {
     spr.setTextColor(GREEN, p.bg);
-    spr.setCursor(4, H - 14);
+    spr.setCursor(4, H - 12);
     spr.print("A: approve");
     spr.setTextColor(HOT, p.bg);
-    spr.setCursor(W - 48, H - 14);
+    spr.setCursor(W - 48, H - 12);
     spr.print("B: deny");
   }
 }
