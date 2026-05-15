@@ -4,6 +4,7 @@
 #include "ble_bridge.h"
 #include "data.h"
 #include "buddy.h"
+#include "buddy_common.h"
 
 TFT_eSprite spr = TFT_eSprite(&M5.Lcd);
 
@@ -496,6 +497,24 @@ bool checkShake() {
   float delta = fabsf(mag - accelBaseline);
   accelBaseline = accelBaseline * 0.95f + mag * 0.05f;
   return delta > 0.8f;
+}
+
+static void updateBuddyTilt() {
+  // During one-shot animations (dizzy/celebrate), zero tilt to avoid conflict
+  if ((int32_t)(millis() - oneShotUntil) < 0) {
+    buddySetTilt(0, 0);
+    return;
+  }
+  float ax, ay, az;
+  M5.Imu.getAccelData(&ax, &ay, &az);
+  // Low-pass filter for smooth movement
+  static float smoothX = 0, smoothY = 0;
+  smoothX = smoothX * 0.7f + ax * 0.3f;
+  smoothY = smoothY * 0.7f + ay * 0.3f;
+  // Map tilt to ±4 pixel offset
+  int8_t tx = (int8_t)constrain((int)(smoothX * 5.0f), -4, 4);
+  int8_t ty = (int8_t)constrain((int)(smoothY * 5.0f), -4, 4);
+  buddySetTilt(tx, ty);
 }
 
 
@@ -1313,6 +1332,8 @@ void loop() {
     const Palette& p = characterPalette();
     spr.fillSprite(p.bg);
   } else if (buddyMode) {
+    updateBuddyTilt();
+    buddyInvalidate();  // force redraw every frame for smooth tilt
     buddyTick(activeState);
   } else if (characterLoaded()) {
     characterSetState(activeState);

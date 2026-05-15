@@ -75,6 +75,15 @@ def main() -> None:
         tool = evt.get("tool_name", "")
         tool_input = evt.get("tool_input", {})
 
+        # Auto-allow read-only tools — no need to bother the device
+        if tool in ("Read", "Grep", "Glob"):
+            output = {"hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+            }}
+            print(json.dumps(output))
+            sys.exit(0)
+
         # Build a human-readable summary of what's being requested
         summary = tool
         hint = ""

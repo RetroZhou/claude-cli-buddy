@@ -35,3 +35,6 @@ void buddyPrintSprite(const char* const* lines, uint8_t nLines, int yOffset, uin
 void buddySetCursor(int x, int y);
 void buddySetColor(uint16_t fg);
 void buddyPrint(const char* s);
+
+// IMU-driven tilt offset applied to all buddy rendering
+void buddySetTilt(int8_t xOff, int8_t yOff);

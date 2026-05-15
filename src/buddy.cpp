@@ -39,6 +39,15 @@ static TFT_eSPI* _tgt = &spr;
 // and re-center per line so the padding doesn't push ink off-screen.
 static uint8_t _scale = 1;
 
+// IMU-driven tilt offset — applied additively in buddyPrintSprite
+static int8_t _tiltX = 0;
+static int8_t _tiltY = 0;
+
+void buddySetTilt(int8_t xOff, int8_t yOff) {
+  _tiltX = xOff;
+  _tiltY = yOff;
+}
+
 void buddyPrintLine(const char* line, int yPx, uint16_t color, int xOff) {
   int len = strlen(line);
   if (_scale > 1) {
@@ -56,7 +65,7 @@ void buddyPrintSprite(const char* const* lines, uint8_t nLines, int yOffset, uin
   _tgt->setTextSize(_scale);
   int yBase = BUDDY_Y_BASE * _scale - (_scale - 1) * 14;
   for (uint8_t i = 0; i < nLines; i++) {
-    buddyPrintLine(lines[i], yBase + (yOffset + i * BUDDY_CHAR_H) * _scale, color, xOff);
+    buddyPrintLine(lines[i], yBase + (yOffset + i * BUDDY_CHAR_H) * _scale + _tiltY * _scale, color, xOff + _tiltX);
   }
 }
 
