@@ -1346,6 +1346,7 @@ void loop() {
     else if (clocking) drawClock();
     else if (displayMode == DISP_INFO) drawInfo();
     else if (displayMode == DISP_PET) drawPet();
+    else if (tama.promptId[0]) drawApprovalFullscreen();
     else if (settings().hud) drawHUD();
     if (resetOpen) drawReset();
     else if (settingsOpen) drawSettings();
