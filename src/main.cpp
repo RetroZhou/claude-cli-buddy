@@ -1323,6 +1323,7 @@ void loop() {
   if (napping || screenOff || landscapeClock) {
     // skip sprite render — face-down, powered off, or landscape clock
     // (which draws direct-to-LCD below)
+    if (landscapeClock) buddySetTilt(0, 0);
   } else if (inPrompt) {
     // Full-screen approval — skip pet, clear canvas
     const Palette& p = characterPalette();
@@ -1333,7 +1334,6 @@ void loop() {
     spr.fillSprite(p.bg);
   } else if (buddyMode) {
     updateBuddyTilt();
-    buddyInvalidate();  // force redraw every frame for smooth tilt
     buddyTick(activeState);
   } else if (characterLoaded()) {
     characterSetState(activeState);
@@ -1367,7 +1367,7 @@ void loop() {
     else if (clocking) drawClock();
     else if (displayMode == DISP_INFO) drawInfo();
     else if (displayMode == DISP_PET) drawPet();
-    else if (tama.promptId[0]) drawApprovalFullscreen();
+    else if (tama.promptId[0] && !responseSent) drawApprovalFullscreen();
     else if (settings().hud) drawHUD();
     if (resetOpen) drawReset();
     else if (settingsOpen) drawSettings();

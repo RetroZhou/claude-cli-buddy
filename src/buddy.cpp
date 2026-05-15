@@ -44,8 +44,10 @@ static int8_t _tiltX = 0;
 static int8_t _tiltY = 0;
 
 void buddySetTilt(int8_t xOff, int8_t yOff) {
+  if (xOff == _tiltX && yOff == _tiltY) return;
   _tiltX = xOff;
   _tiltY = yOff;
+  buddyInvalidate();
 }
 
 void buddyPrintLine(const char* line, int yPx, uint16_t color, int xOff) {
@@ -72,7 +74,10 @@ void buddyPrintSprite(const char* const* lines, uint8_t nLines, int yOffset, uin
 // Species pass 1× coords (relative to BUDDY_X_CENTER / BUDDY_Y_OVERLAY);
 // transform here so all 18 species files stay scale-agnostic.
 void buddySetCursor(int x, int y) {
-  _tgt->setCursor(BUDDY_X_CENTER + (x - BUDDY_X_CENTER) * _scale, y * _scale);
+  _tgt->setCursor(
+    BUDDY_X_CENTER + (x - BUDDY_X_CENTER) * _scale + _tiltX * _scale,
+    y * _scale + _tiltY * _scale
+  );
 }
 void buddySetColor(uint16_t fg)   { _tgt->setTextColor(fg, BUDDY_BG); }
 void buddyPrint(const char* s)    { _tgt->setTextSize(_scale); _tgt->print(s); }
